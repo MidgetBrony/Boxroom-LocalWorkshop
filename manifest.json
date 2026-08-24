@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "boxroom-localworkshop",
+  "name": "LocalWorkshop",
+  "author": "MidgetBrony",
+  "description": "Load custom BOXROOM placeable objects from a local folder without publishing them to Steam Workshop.",
+  "repository": "https://github.com/MidgetBrony/Boxroom-LocalWorkshop",
+  "requirements": { "melonLoader": "0.7.0" },
+  "dependencies": [],
+  "release": {
+    "provider": "github",
+    "asset": "LocalWorkshop*.zip",
+    "destination": "Mods"
+  }
+}
