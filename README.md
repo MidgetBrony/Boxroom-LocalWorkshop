@@ -24,6 +24,16 @@ The mod patches BOXROOM's `ModsPlaceableLoader` and injects additional placeable
 - Fast development workflow
 - Compatible with Steam Workshop
 - Automatically creates the Mods folder on first launch
+- Public API for mods to register their own catalogues at runtime
+- Scrollable catalogue selector for larger catalogue collections
+- Modern-style custom catalogue pages with contents navigation
+
+## Catalogue API
+
+Other MelonLoader mods can reference `LocalWorkshop.dll` and register a
+catalogue during initialization. LocalWorkshop owns the shared catalogue UI,
+page generation, selector scrolling, and navigation behavior so individual
+content mods only need to provide their catalogue definition and placeables.
 
 ---
 

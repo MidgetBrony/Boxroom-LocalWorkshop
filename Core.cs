@@ -17,7 +17,7 @@ using UnityEngine;
 [assembly: MelonInfo(
     typeof(LocalWorkshop.Core),
     "LocalWorkshop",
-    "1.1.1",
+    "1.2.0",
     "MidgetBrony",
     null)]
 
@@ -86,6 +86,7 @@ namespace LocalWorkshop
         public CatalogManifest Manifest;
 
         public Texture2D CoverTexture;
+        public bool OwnsCoverTexture;
 
         public readonly List<LoadedCategory> Categories =
             new List<LoadedCategory>();
@@ -169,7 +170,7 @@ namespace LocalWorkshop
                     catalog.RuntimeData = null;
                 }
 
-                if (catalog.CoverTexture != null)
+                if (catalog.CoverTexture != null && catalog.OwnsCoverTexture)
                 {
                     UnityEngine.Object.Destroy(
                         catalog.CoverTexture);
@@ -204,6 +205,13 @@ namespace LocalWorkshop
                     x =>
                         x != null &&
                         !x.IsModsCatalogue &&
+                        x.name.IndexOf("Modern", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        x.ContentsPagePrefab != null &&
+                        x.PageNumberPrefab != null)
+                ?? existingCatalogues.FirstOrDefault(
+                    x =>
+                        x != null &&
+                        !x.IsModsCatalogue &&
                         x.ContentsPagePrefab != null &&
                         x.PageNumberPrefab != null);
 
@@ -228,14 +236,13 @@ namespace LocalWorkshop
             UI_PageTemplate pageTemplate = null;
 
 
-            // Prefer the Mods catalogue page template.
-            // We know it supports mod PlaceableData.
-            if (modsTemplate != null &&
-                modsTemplate.Pages != null &&
-                modsTemplate.Pages.Length > 0)
+            // Custom books deliberately use the Modern-style editorial page,
+            // including its title, 2-column grid and item data treatment.
+            if (normalTemplate.Pages != null &&
+                normalTemplate.Pages.Length > 1)
             {
                 pageTemplate =
-                    modsTemplate.Pages[0]?.PageTemplate;
+                    normalTemplate.Pages[1]?.PageTemplate;
             }
 
 
@@ -267,15 +274,10 @@ namespace LocalWorkshop
             }
 
 
-            int defaultItemsPerPage = 8;
-
-
-            if (modsTemplate != null &&
-                modsTemplate.ModsItemsPerPage > 0)
-            {
-                defaultItemsPerPage =
-                    modsTemplate.ModsItemsPerPage;
-            }
+            int defaultItemsPerPage =
+                pageTemplate.ItemDisplayCount > 0
+                    ? pageTemplate.ItemDisplayCount
+                    : 6;
 
 
             foreach (LoadedCatalog catalog
@@ -336,10 +338,13 @@ namespace LocalWorkshop
             data.ModsItemsPerPage = 0;
 
 
-            int itemsPerPage =
+            int requestedItemsPerPage =
                 catalog.Manifest.ItemsPerPage > 0
                     ? catalog.Manifest.ItemsPerPage
                     : defaultItemsPerPage;
+
+            int itemsPerPage =
+                Mathf.Min(requestedItemsPerPage, defaultItemsPerPage);
 
 
             List<CataloguePageDefinition> pages =
@@ -673,6 +678,8 @@ namespace LocalWorkshop
                 modelPaths,
                 spritePaths);
 
+            LocalWorkshopApi.ApplyRegisteredCatalogues();
+
 
             MelonLogger.Msg(
                 $"[LocalWorkshop] Total custom catalogues: " +
@@ -946,6 +953,7 @@ namespace LocalWorkshop
                             {
                                 catalog.CoverTexture =
                                     texture;
+                                catalog.OwnsCoverTexture = true;
 
 
                                 MelonLogger.Msg(
@@ -1825,6 +1833,102 @@ namespace LocalWorkshop
 
 
             return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(Menu_Catalogue), "PhysicalPageNumber")]
+    internal static class CustomCataloguePageNumberPatch
+    {
+        static void Postfix(Menu_Catalogue __instance, ref int __result)
+        {
+            if (LocalWorkshopApi.IsCustomCatalogue(__instance.CurrentData))
+                __result = Mathf.Max(1, __result - 1);
+        }
+    }
+
+    [HarmonyPatch(typeof(UI_CatalogueContentsButton), nameof(UI_CatalogueContentsButton.SetPage))]
+    internal static class CustomCatalogueContentsNumberPatch
+    {
+        private static readonly HashSet<int> CustomContentsPages = new HashSet<int>();
+
+        [HarmonyPatch(typeof(UI_CatalogueContentsPage), nameof(UI_CatalogueContentsPage.ShowContents))]
+        [HarmonyPrefix]
+        static void RememberCustomContentsPage(
+            UI_CatalogueContentsPage __instance,
+            CatalogueData catalogueData)
+        {
+            if (LocalWorkshopApi.IsCustomCatalogue(catalogueData))
+                CustomContentsPages.Add(__instance.GetInstanceID());
+        }
+
+        [HarmonyPatch(typeof(UI_CatalogueContentsPage), nameof(UI_CatalogueContentsPage.ShowContents))]
+        [HarmonyPostfix]
+        static void BuildCustomContentsPage(
+            UI_CatalogueContentsPage __instance,
+            CatalogueData catalogueData)
+        {
+            if (!LocalWorkshopApi.IsCustomCatalogue(catalogueData) ||
+                __instance.transform.Find("LocalWorkshop_CatalogueTitle") != null)
+                return;
+
+            Transform[] contentsTransforms =
+                __instance.GetComponentsInChildren<Transform>(true);
+
+            Transform oldInfo = contentsTransforms
+                .FirstOrDefault(x => x.name == "CDInfo");
+            if (oldInfo != null) oldInfo.gameObject.SetActive(false);
+
+            // Modern's stock page image contains the words OUR PRODUCTS.
+            // Clear that sprite in-place instead of covering the live controls.
+            Transform page = contentsTransforms
+                .FirstOrDefault(x => x.name == "Page");
+            UnityEngine.UI.Image pageImage = page?.GetComponent<UnityEngine.UI.Image>();
+            if (pageImage != null)
+            {
+                pageImage.sprite = null;
+                pageImage.color = new Color(0.965f, 0.955f, 0.93f, 1f);
+                pageImage.raycastTarget = false;
+            }
+
+            // Header is the hard-coded MUSIC COLLECTION label in this prefab.
+            Transform oldHeader = contentsTransforms
+                .FirstOrDefault(x => x.name == "Header");
+            if (oldHeader != null) oldHeader.gameObject.SetActive(false);
+
+            TMPro.TMP_Text contentsText = __instance
+                .GetComponentsInChildren<TMPro.TMP_Text>(true)
+                .FirstOrDefault(x => string.Equals(x.text, "Contents", StringComparison.OrdinalIgnoreCase));
+            if (contentsText != null)
+            {
+                contentsText.name = "LocalWorkshop_CatalogueTitle";
+                contentsText.text = LocalWorkshopApi
+                    .GetCatalogueDisplayName(catalogueData)
+                    .ToUpperInvariant();
+                contentsText.alignment = TMPro.TextAlignmentOptions.Center;
+                contentsText.gameObject.SetActive(true);
+            }
+
+            Transform list = contentsTransforms
+                .FirstOrDefault(x => x.name == "List Container");
+            if (list != null) list.gameObject.SetActive(true);
+        }
+
+        [HarmonyPostfix]
+        static void Postfix(
+            CataloguePageDefinition page,
+            int pageIndex,
+            TMPro.TMP_Text ___nameText,
+            UI_CatalogueContentsPage ___ownerPage)
+        {
+            if (___ownerPage != null &&
+                CustomContentsPages.Contains(___ownerPage.GetInstanceID()) &&
+                ___nameText != null)
+            {
+                // BOXROOM passes a one-based navigation index and the vanilla
+                // button adds one again because it counts the contents sheet.
+                // Custom books expose logical section pages starting at 1.
+                ___nameText.text = $"{pageIndex}. {page.PageName}";
+            }
         }
     }
 }

@@ -10,6 +10,7 @@
   "release": {
     "provider": "github",
     "asset": "LocalWorkshop*.zip",
-    "destination": "Mods"
+    "destination": "Mods",
+    "checksumAsset": "SHA256SUMS.txt"
   }
 }
