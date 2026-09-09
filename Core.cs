@@ -17,7 +17,7 @@ using UnityEngine;
 [assembly: MelonInfo(
     typeof(LocalWorkshop.Core),
     "LocalWorkshop",
-    "1.2.0",
+    "1.2.1",
     "MidgetBrony",
     null)]
 
@@ -404,7 +404,9 @@ namespace LocalWorkshop
 
 
                     page.PageName =
-                        category.DisplayName;
+                        pageCount > 1
+                            ? $"{category.DisplayName} {pageIndex + 1}/{pageCount}"
+                            : category.DisplayName;
 
 
                     page.PageTemplate =
