@@ -27,6 +27,7 @@ The mod patches BOXROOM's `ModsPlaceableLoader` and injects additional placeable
 - Public API for mods to register their own catalogues at runtime
 - Scrollable catalogue selector for larger catalogue collections
 - Modern-style custom catalogue pages with contents navigation
+- One contents entry per logical category, even when a category spans many item pages
 
 ## Catalogue API
 

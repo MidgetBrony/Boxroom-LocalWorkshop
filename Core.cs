@@ -1,6 +1,7 @@
 ﻿using Catalogue;
 using HarmonyLib;
 using MelonLoader;
+using SteamShelf;
 using SteamShelf.Items;
 using SteamShelf.Placeables;
 using SteamShelf.PlayerTools;
@@ -17,7 +18,7 @@ using UnityEngine;
 [assembly: MelonInfo(
     typeof(LocalWorkshop.Core),
     "LocalWorkshop",
-    "1.2.1",
+    "1.2.2",
     "MidgetBrony",
     null)]
 
@@ -403,10 +404,7 @@ namespace LocalWorkshop
                         $"{pageIndex + 1}";
 
 
-                    page.PageName =
-                        pageCount > 1
-                            ? $"{category.DisplayName} {pageIndex + 1}/{pageCount}"
-                            : category.DisplayName;
+                    page.PageName = category.DisplayName;
 
 
                     page.PageTemplate =
@@ -1848,19 +1846,37 @@ namespace LocalWorkshop
         }
     }
 
-    [HarmonyPatch(typeof(UI_CatalogueContentsButton), nameof(UI_CatalogueContentsButton.SetPage))]
+    [HarmonyPatch]
     internal static class CustomCatalogueContentsNumberPatch
     {
-        private static readonly HashSet<int> CustomContentsPages = new HashSet<int>();
-
         [HarmonyPatch(typeof(UI_CatalogueContentsPage), nameof(UI_CatalogueContentsPage.ShowContents))]
         [HarmonyPrefix]
-        static void RememberCustomContentsPage(
+        static bool BuildLogicalContents(
             UI_CatalogueContentsPage __instance,
-            CatalogueData catalogueData)
+            CatalogueData catalogueData,
+            Action<int> contentsClickedCallback,
+            PrefabCache<UI_CatalogueContentsButton> ___buttonCache,
+            ref Action<int> ___buttonClickedCallback)
         {
-            if (LocalWorkshopApi.IsCustomCatalogue(catalogueData))
-                CustomContentsPages.Add(__instance.GetInstanceID());
+            if (!LocalWorkshopApi.IsCustomCatalogue(catalogueData)) return true;
+
+            ___buttonClickedCallback = contentsClickedCallback;
+            ___buttonCache.RetrieveAll();
+            List<CataloguePageDefinition> pages = catalogueData.FunctionalPages();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int logicalIndex = 0;
+            for (int i = 0; i < pages.Count; i++)
+            {
+                CataloguePageDefinition page = pages[i];
+                string section = string.IsNullOrWhiteSpace(page.PageName) ? "Items" : page.PageName;
+                if (!seen.Add(section)) continue;
+                UI_CatalogueContentsButton button = ___buttonCache.Get();
+                button.Initialize(__instance);
+                button.SetPage(page, i + 1);
+                TMPro.TMP_Text label = button.GetComponentInChildren<TMPro.TMP_Text>(true);
+                if (label != null) label.text = $"{++logicalIndex}. {section}";
+            }
+            return false;
         }
 
         [HarmonyPatch(typeof(UI_CatalogueContentsPage), nameof(UI_CatalogueContentsPage.ShowContents))]
@@ -1915,22 +1931,5 @@ namespace LocalWorkshop
             if (list != null) list.gameObject.SetActive(true);
         }
 
-        [HarmonyPostfix]
-        static void Postfix(
-            CataloguePageDefinition page,
-            int pageIndex,
-            TMPro.TMP_Text ___nameText,
-            UI_CatalogueContentsPage ___ownerPage)
-        {
-            if (___ownerPage != null &&
-                CustomContentsPages.Contains(___ownerPage.GetInstanceID()) &&
-                ___nameText != null)
-            {
-                // BOXROOM passes a one-based navigation index and the vanilla
-                // button adds one again because it counts the contents sheet.
-                // Custom books expose logical section pages starting at 1.
-                ___nameText.text = $"{pageIndex}. {page.PageName}";
-            }
-        }
     }
 }
