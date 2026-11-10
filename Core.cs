@@ -18,7 +18,7 @@ using UnityEngine;
 [assembly: MelonInfo(
     typeof(LocalWorkshop.Core),
     "LocalWorkshop",
-    "1.2.2",
+    "1.2.3",
     "MidgetBrony",
     null)]
 
@@ -1483,6 +1483,74 @@ namespace LocalWorkshop
     // [Vanilla Books] [Home Collection] [Mods]
     //
     // ============================================================
+
+    [HarmonyPatch(
+        typeof(InWorldCatalogueManager),
+        "RefreshFunctionalCatalogues")]
+    internal static class FunctionalCataloguePatch
+    {
+        static void Postfix(InWorldCatalogueManager __instance)
+        {
+            if (!CatalogRegistry.HasCatalogues)
+                return;
+
+            FieldInfo field = AccessTools.Field(
+                typeof(InWorldCatalogueManager),
+                "functionalCatalogues");
+
+            List<CatalogueData> catalogues =
+                field?.GetValue(__instance) as List<CatalogueData>;
+
+            if (catalogues == null)
+            {
+                MelonLogger.Warning(
+                    "[Catalog] Could not access the functional catalogue list.");
+                return;
+            }
+
+            // BOXROOM 1.0's Item Browser reads this private list directly.
+            // Custom catalogues previously existed only in the physical-book
+            // selector, so their items disappeared from the new browser.
+            CatalogRegistry.BuildRuntimeCatalogues(catalogues);
+
+            int modsIndex = catalogues.FindIndex(
+                x => x != null && x.IsModsCatalogue);
+
+            if (modsIndex < 0)
+                modsIndex = catalogues.Count;
+
+            foreach (CatalogueData custom in
+                     CatalogRegistry.GetRuntimeCatalogues())
+            {
+                if (custom == null || catalogues.Contains(custom))
+                    continue;
+
+                catalogues.Insert(modsIndex, custom);
+                modsIndex++;
+            }
+        }
+    }
+
+    [HarmonyPatch(
+        typeof(InWorldCatalogueManager),
+        nameof(InWorldCatalogueManager.GetBrowsableItems))]
+    internal static class BrowsableCatalogueRefreshPatch
+    {
+        static void Prefix(InWorldCatalogueManager __instance)
+        {
+            // The 1.0 Item Browser otherwise keeps the first list it built.
+            // If that happened before Steam Workshop/local placeables finished
+            // loading, every later visit continued to hide those items.
+            FieldInfo field = AccessTools.Field(
+                typeof(InWorldCatalogueManager),
+                "functionalCatalogues");
+
+            List<CatalogueData> catalogues =
+                field?.GetValue(__instance) as List<CatalogueData>;
+
+            catalogues?.Clear();
+        }
+    }
 
     [HarmonyPatch(
         typeof(InWorldCatalogueSelector),
